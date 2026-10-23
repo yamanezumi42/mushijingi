@@ -28,7 +28,7 @@ small{color:var(--sub);font-size:12px;line-height:1.6}
   <h1>蟲神器 対戦</h1>
   <section id="need">
     <p>はじめに、送ってもらった<br><b>「蟲神器データ.dat」</b>を取り込んでください。</p>
-    <ol class="steps"><li>LINE・AirDrop・LocalSend などで受け取ったファイルを「ファイル」アプリに保存</li><li>下のボタンを押して、そのファイルを選ぶ</li></ol>
+    <ol class="steps"><li>LINE・AirDrop・LocalSend などで受け取ったファイルを「ファイル」アプリに保存</li><li id="stepHome">（iPhone）先にこの画面で 共有ボタン →「ホーム画面に追加」。<b>ホーム画面のアイコンから開き直してから</b>次へ<br><small>ホーム画面のアプリとSafariは保存場所が別なので、取り込みはアイコンから開いた側で行います</small></li><li>下のボタンを押して、そのファイルを選ぶ</li></ol>
     <p style="margin-top:14px"><button class="btn" id="pick">データを取り込む</button></p>
     <input type="file" id="file" hidden>
     <small>カードの絵・曲・声はこのスマホの中だけに保存されます（ネットには出ません）。取り込みは最初の1回だけです。</small>
@@ -80,6 +80,7 @@ $('pick').onclick = () => $('file').click();
 $('again').onclick = () => $('file').click();
 $('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPack(f).catch(x => { err('取り込めませんでした：' + (x.message || x)); check() }) };
 $('play').onclick = () => location.href = appURL;
-if (!matchMedia('(display-mode: standalone)').matches && !navigator.standalone) $('hint').hidden = false;
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+if (standalone) $('stepHome').hidden = true; else $('hint').hidden = false;
 swReady().then(check).catch(x => { err(x.message || String(x)); show('need') });
 </script></body></html>
