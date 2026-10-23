@@ -40,10 +40,11 @@ section{display:flex;flex-direction:column;align-items:center;gap:10px;width:100
     <button class="btn sub" id="pick">「蟲神器データ.dat」から取り込む</button>
     <input type="file" id="file" hidden>
   </section>
-  <section id="busy" hidden><p id="msg">取り込み中…</p><div class="bar"><i id="pg"></i></div></section>
+  <section id="busy" hidden><p id="msg" style="white-space:pre-line">取り込み中…</p><div class="bar"><i id="pg"></i></div></section>
   <section id="ready" hidden>
     <button class="btn" id="play">対戦をはじめる</button>
     <small id="upd"></small>
+    <button class="btn sub" id="retry" hidden>もう一度 更新を確かめる</button>
     <small id="info"></small>
     <button class="btn sub" id="again">データを取り込み直す（.dat）</button>
     <button class="btn sub" id="rekey">鍵を入れ直す</button>
@@ -62,7 +63,7 @@ const getKey = () => { try { return localStorage.getItem(KEYK) || '' } catch(e) 
 const setKey = k => { try { k ? localStorage.setItem(KEYK, k) : localStorage.removeItem(KEYK) } catch(e) {} };
 async function swReady(){
   if (!('serviceWorker' in navigator)) throw new Error('このブラウザでは使えません（Safari か Chrome で開いてください）');
-  await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+  const reg = await navigator.serviceWorker.register('sw.js'); try { await reg.update() } catch(e) {} await navigator.serviceWorker.ready;
   if (!navigator.serviceWorker.controller) await new Promise(r => { navigator.serviceWorker.addEventListener('controllerchange', r, {once:true}); setTimeout(r, 3000) });
 }
 async function metaOf(){ const c = await caches.open(PACK), m = await c.match(appURL + '__meta.json'); return m ? m.json() : null }
@@ -74,13 +75,13 @@ async function check(){
   if (m) { showInfo(m); show('ready') }
   if (key) { try { await sync(key) } catch(x) {
     if (!m) { err('入れられませんでした：' + (x.message || x)); show('need') }
-    else { $('upd').textContent = '更新を確かめられませんでした（' + (x.message || x) + '）。前の版で遊べます'; $('play').disabled = false } } }
+    else { showInfo(m); show('ready'); $('upd').textContent = '更新できませんでした（' + (x.message || x) + '）。前の版で遊べます'; $('play').disabled = false; $('retry').hidden = false } } }
 }
 // ---- 鍵で入れる・更新する：配信先の一覧（各ファイルの中身の要約）と、このスマホの中を比べて、違う物だけ取ってくる ----
 async function sha1(blob){ const b = await crypto.subtle.digest('SHA-1', await blob.arrayBuffer()); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 16) }
 async function sync(key){
-  $('upd').textContent = '更新を確かめています…'; $('play').disabled = true;
-  const r = await fetch(REMOTE + 'manifest-pack.json?k=' + encodeURIComponent(key), {cache:'no-store'});
+  $('upd').textContent = '更新を確かめています…'; $('play').disabled = true; $('retry').hidden = true;
+  const r = await fetch(REMOTE + 'manifest-pack.json?k=' + encodeURIComponent(key) + '&t=' + Date.now(), {cache:'no-store'}).catch(() => { throw new Error('配信先につながりませんでした（ネットにつながっているか確かめてください）') });
   if (r.status === 403) throw new Error('鍵が違います');
   if (!r.ok) throw new Error('配信先につながりませんでした（' + r.status + '）');
   const man = await r.json(), c = await caches.open(PACK);
@@ -96,18 +97,43 @@ async function sync(key){
   const gone = (await c.keys()).filter(q => { const p = decodeURIComponent(new URL(q.url).pathname.slice(new URL(appURL).pathname.length)); return !p.startsWith('__') && !keep.has(p) });
   const old = await metaOf(), direct = !old;   // はじめての時は、取れた物から順に入れる（70MBを一度にメモリへ持たない）
   if (need.length) {
-    show('busy'); const total = need.reduce((a, f) => a + f[2], 0); let got = 0, done = 0;
-    $('msg').textContent = `新しい版を取ってきています… 0 / ${need.length}`;
+    show('busy'); const total = need.reduce((a, f) => a + f[2], 0), t0 = Date.now(); let got = 0, done = 0, note = '';
+    // 進み具合：ファイルの途中でも MB が動く。速さと残り時間も出す（遅いだけか、止まっているかが分かる）
+    const paint = () => { const sec = (Date.now() - t0) / 1000, sp = got / Math.max(1, sec), left = sp > 0 ? (total - got) / sp : 0;
+      $('pg').style.width = (got / total * 100).toFixed(1) + '%';
+      const NL = String.fromCharCode(10);
+      $('msg').textContent = `新しい版を取ってきています… ${done} / ${need.length}（${(got / 1e6).toFixed(1)} / ${(total / 1e6).toFixed(1)}MB）` + (sec > 3 && got ? NL + `${(sp * 8 / 1e6).toFixed(1)}Mbps・あと約${left < 60 ? Math.ceil(left) + '秒' : Math.ceil(left / 60) + '分'}` : '') + (note ? NL + note : '') };
+    paint();
     // 全部そろってから入れ替える（途中で切れても、前の版がそのまま残る）
     const blobs = [];
-    const one = async ([path, type, size, h]) => {
-      const res = await fetch(REMOTE + encodeURI(path) + '?k=' + encodeURIComponent(key));
-      if (!res.ok) throw new Error(`${path} を取れませんでした（${res.status}）`);
-      const b = await res.blob(); if (b.size !== size) throw new Error(`${path} の大きさが違います`);
-      if (direct) { await c.put(new Request(appURL + encodeURI(path)), new Response(b, {headers:{'Content-Type':type, 'Content-Length':String(size)}})); known[path] = h } else blobs.push([path, type, size, h, b]);
-      got += size; done++;
-      $('pg').style.width = (got / total * 100).toFixed(1) + '%'; $('msg').textContent = `新しい版を取ってきています… ${done} / ${need.length}（${(got / 1e6).toFixed(1)} / ${(total / 1e6).toFixed(1)}MB）`;
+    // 1ファイル取る。URL に中身の要約（h）を付ける＝版が変わると URL も変わるので、ブラウザに残った古い写しを使わない
+    //   （2026-10-24 Androidの友だちで「0 / 1」のまま止まった原因＝同じURLの古い index.html が返り、大きさ違いで失敗→画面が戻らなかった）
+    //   20秒なにも届かなければ打ち切って取り直す（3回まで）。届いた物は中身の要約まで確かめる
+    const fetchOne = async ([path, type, size, h]) => {
+      for (let tries = 1; ; tries++) {
+        const ac = new AbortController(); let last = Date.now(), part = 0;
+        const iv = setInterval(() => { if (Date.now() - last > 20000) ac.abort() }, 1000);
+        try {
+          const res = await fetch(REMOTE + encodeURI(path) + '?k=' + encodeURIComponent(key) + '&h=' + h, {cache:'no-store', signal:ac.signal});
+          if (res.status === 403) throw Object.assign(new Error('鍵が違います'), {fatal:true});
+          if (!res.ok) throw new Error(`${path} を取れませんでした（${res.status}）`);
+          const rd = res.body.getReader(), chunks = [];
+          for (;;) { const {done:end, value} = await rd.read(); if (end) break; chunks.push(value); part += value.length; got += value.length; last = Date.now(); paint() }
+          const b = new Blob(chunks, {type});
+          if (b.size !== size) throw new Error(`${path} の大きさが違います`);
+          if (await sha1(b) !== h) throw new Error(`${path} の中身が違います`);
+          clearInterval(iv); return b;
+        } catch(x) {
+          clearInterval(iv); got -= part; paint();
+          const e = x && x.name === 'AbortError' ? new Error('通信が20秒止まりました') : x && x.name === 'TypeError' ? new Error('通信が切れました') : x;
+          if (e.fatal || tries >= 3) throw e;
+          note = `つながり直しています…（${e.message}・${tries}回目）`; paint(); await new Promise(r => setTimeout(r, 1500 * tries)); note = '';
+        }
+      }
     };
+    const one = async f => { const [path, type, size, h] = f, b = await fetchOne(f);
+      if (direct) { await c.put(new Request(appURL + encodeURI(path)), new Response(b, {headers:{'Content-Type':type, 'Content-Length':String(size)}})); known[path] = h } else blobs.push([path, type, size, h, b]);
+      done++; paint() };
     const q = need.slice(); await Promise.all([...Array(6)].map(async () => { while (q.length) await one(q.shift()) }));
     $('msg').textContent = '入れ替えています…';
     for (const [path, type, size, h, b] of blobs) { await c.put(new Request(appURL + encodeURI(path)), new Response(b, {headers:{'Content-Type':type, 'Content-Length':String(size)}})); known[path] = h }
@@ -143,9 +169,10 @@ async function importPack(file){
 }
 $('keyGo').onclick = async () => { const k = $('key').value.trim(); if (k.length < 16) return err('鍵を入れてください');
   err(''); $('keyGo').disabled = true; show('busy'); $('msg').textContent = '鍵を確かめています…';
-  try { await sync(k); setKey(k); $('rekey').hidden = false } catch(x) { err('入れられませんでした：' + (x.message || x)); const m = await metaOf(); if (m) { showInfo(m); show('ready'); $('play').disabled = false } else show('need') }
+  try { await sync(k); setKey(k); $('rekey').hidden = false } catch(x) { err('入れられませんでした：' + (x.message || x) + (/鍵が違います/.test(x.message) ? '' : '（もう一度押すと、取れた所の続きから入れます）')); const m = await metaOf(); if (m) { showInfo(m); show('ready'); $('play').disabled = false } else show('need') }
   $('keyGo').disabled = false };
 $('rekey').onclick = () => { $('key').value = ''; show('need') };
+$('retry').onclick = () => { err(''); check() };
 $('pick').onclick = () => $('file').click();
 $('again').onclick = () => $('file').click();
 $('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPack(f).catch(x => { err('取り込めませんでした：' + (x.message || x)); check() }) };

@@ -2,18 +2,22 @@
 // ・入れ物（このフォルダの index.html など）は、ネットがあれば最新を取り、なければ保存した物を使う
 // ・中身（app/ の下：ゲーム本体・絵・曲・声）は、取り込んだ時に端末へ保存した物だけを返す（ネットには取りに行かない）
 // ・iPhoneのSafariは曲や声を「途中から（Range）」で読みに来るので、その形でも返す
-const SHELL = 'mj-shell-v2', PACK = 'mj-pack';
+const SHELL = 'mj-shell-v3', PACK = 'mj-pack';
 const SHELL_FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(SHELL).then(c => c.addAll(SHELL_FILES)).then(() => self.skipWaiting())) });
-self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()) });
+// 古い入れ物の置き場は消す（2026-10-24 古い index.html が出続けた）
+self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('mj-shell-') && k !== SHELL).map(k => caches.delete(k)))).then(() => self.clients.claim())) });
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (u.origin !== location.origin) return;
   const base = new URL('./', self.registration.scope).pathname, appBase = base + 'app/';
   if (u.pathname.startsWith(appBase)) { e.respondWith(fromPack(e.request, u, appBase)); return }
   if (e.request.method !== 'GET') return;
-  e.respondWith(fetch(e.request, {cache:'no-store'}).then(r => { if (r.ok) { const c = r.clone(); caches.open(SHELL).then(s => s.put(e.request, c)) } return r })
-    .catch(() => caches.match(e.request, {ignoreSearch:true})));
+  // 入れ物はいつもネットの最新を取る（取れない時＝圏外だけ、保存した物）。
+  //   画面を開く時の要求（navigate）をそのまま使うと取れない端末があり、保存した古い入れ物が出続けた（2026-10-24）→ URL の文字だけで取り直す
+  const url = u.origin + u.pathname;
+  e.respondWith(fetch(url, {cache:'no-store', credentials:'same-origin'}).then(r => { if (r.ok) { const c = r.clone(); caches.open(SHELL).then(s => s.put(url, c)) } return r })
+    .catch(() => caches.match(url, {ignoreSearch:true}).then(r => r || caches.match(e.request, {ignoreSearch:true}))));
 });
 const base0 = () => new URL('./', self.registration.scope).pathname;
 async function fromPack(req, u, appBase){
