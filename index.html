@@ -84,6 +84,7 @@ async function sync(key){
   const r = await fetch(REMOTE + 'manifest-pack.json?k=' + encodeURIComponent(key) + '&t=' + Date.now(), {cache:'no-store'}).catch(() => { throw new Error('配信先につながりませんでした（ネットにつながっているか確かめてください）') });
   if (r.status === 403) throw new Error('鍵が違います');
   if (!r.ok) throw new Error('配信先につながりませんでした（' + r.status + '）');
+  setKey(key); $('rekey').hidden = false;   // 鍵が合っていると分かった時点で覚える（取り込みの途中で閉じても、次に開いた時に続きから）
   const man = await r.json(), c = await caches.open(PACK);
   const known = await (async () => { const f = await c.match(appURL + '__files.json'); return f ? f.json() : {} })();
   // 前に .dat から入れた物は要約の記録がないので、その場で中身から計算して比べる（同じなら取り直さない）
