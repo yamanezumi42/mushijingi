@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="蟲神器 対戦">
+<meta name="theme-color" content="#05040a">
+<link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="app/icon-180.png"><link rel="icon" href="icon-192.png">
+<title>蟲神器 対戦</title>
+<style>
+:root{--gold:#e8c35a;--sub:#a59fae}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#05040a;color:#f3eee6;font-family:"Hiragino Sans","Yu Gothic UI",sans-serif}
+main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:calc(24px + env(safe-area-inset-top)) 22px calc(24px + env(safe-area-inset-bottom));text-align:center}
+img.icon{width:120px;height:120px;border-radius:28px;box-shadow:0 8px 30px rgba(0,0,0,.7),0 0 30px rgba(232,195,90,.25)}
+h1{margin:0;font-size:24px;letter-spacing:.08em}
+p{margin:0;font-size:14px;line-height:1.7;color:#d8d2c8}
+small{color:var(--sub);font-size:12px;line-height:1.6}
+.btn{display:block;width:100%;max-width:320px;min-height:54px;border-radius:27px;border:0;font-size:17px;font-weight:800;color:#3a2800;background:radial-gradient(#ffe48a,#c7952c);box-shadow:0 0 18px rgba(232,195,90,.5);font-family:inherit}
+.btn.sub{background:none;color:#f3eee6;border:1px solid #5c5470;box-shadow:none;font-size:14px;min-height:44px}
+.bar{width:100%;max-width:320px;height:10px;border-radius:5px;background:#221d2b;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#c7952c,#ffe48a);transition:width .2s}
+.steps{text-align:left;max-width:340px;font-size:13px;line-height:1.7;color:#d8d2c8;padding-left:20px;margin:0}
+.err{color:#ff9aa6;font-size:13px}
+[hidden]{display:none!important}
+</style></head><body>
+<main>
+  <img class="icon" id="ico" src="icon-192.png" alt="">
+  <h1>蟲神器 対戦</h1>
+  <section id="need">
+    <p>はじめに、送ってもらった<br><b>「蟲神器データ.dat」</b>を取り込んでください。</p>
+    <ol class="steps"><li>LINE・AirDrop・LocalSend などで受け取ったファイルを「ファイル」アプリに保存</li><li>下のボタンを押して、そのファイルを選ぶ</li></ol>
+    <p style="margin-top:14px"><button class="btn" id="pick">データを取り込む</button></p>
+    <input type="file" id="file" hidden>
+    <small>カードの絵・曲・声はこのスマホの中だけに保存されます（ネットには出ません）。取り込みは最初の1回だけです。</small>
+  </section>
+  <section id="busy" hidden><p id="msg">取り込み中…</p><div class="bar"><i id="pg"></i></div></section>
+  <section id="ready" hidden>
+    <button class="btn" id="play">対戦をはじめる</button>
+    <p style="margin-top:12px"><small id="info"></small></p>
+    <p style="margin-top:6px"><button class="btn sub" id="again">データを取り込み直す</button></p>
+  </section>
+  <p class="err" id="err" hidden></p>
+  <small id="hint" hidden>ホーム画面に追加すると、アプリのように全画面で遊べます（Safariの共有ボタン →「ホーム画面に追加」）。</small>
+</main>
+<script>
+const PACK = 'mj-pack', MAGIC = 'MJPK0001', $ = id => document.getElementById(id);
+const show = s => ['need', 'busy', 'ready'].forEach(k => $(k).hidden = k !== s);
+const err = t => { $('err').textContent = t; $('err').hidden = !t };
+const appURL = new URL('app/', location.href).href;
+async function swReady(){
+  if (!('serviceWorker' in navigator)) throw new Error('このブラウザでは使えません（Safari か Chrome で開いてください）');
+  await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+  if (!navigator.serviceWorker.controller) await new Promise(r => { navigator.serviceWorker.addEventListener('controllerchange', r, {once:true}); setTimeout(r, 3000) });
+}
+async function check(){
+  if (navigator.serviceWorker.controller) $('ico').src = 'app/icon-180.png?' + Date.now();   // 取り込んだら公式のアイコン、前は自前のアイコン
+  const c = await caches.open(PACK), meta = await c.match(appURL + '__meta.json');
+  if (!meta) return show('need');
+  const m = await meta.json(); $('info').textContent = `取り込み済み：${m.count}ファイル・${(m.bytes / 1e6).toFixed(1)}MB（${m.at}）`; show('ready');
+}
+async function importPack(file){
+  err(''); show('busy'); $('msg').textContent = '読み込み中…';
+  const buf = await file.arrayBuffer(), u8 = new Uint8Array(buf);
+  if (new TextDecoder().decode(u8.slice(0, 8)) !== MAGIC) throw new Error('「蟲神器データ.dat」ではないようです');
+  const hl = new DataView(buf).getUint32(8, true), list = JSON.parse(new TextDecoder().decode(u8.slice(12, 12 + hl)));
+  await caches.delete(PACK); const c = await caches.open(PACK);
+  let off = 12 + hl, n = 0, bytes = 0;
+  for (const [path, type, size] of list) {
+    const blob = new Blob([u8.subarray(off, off + size)], {type});
+    await c.put(new Request(appURL + encodeURI(path)), new Response(blob, {headers:{'Content-Type':type, 'Content-Length':String(size)}}));
+    off += size; n++; bytes += size;
+    if (n % 20 === 0 || n === list.length) { $('pg').style.width = (n / list.length * 100).toFixed(1) + '%'; $('msg').textContent = `取り込み中… ${n} / ${list.length}` }
+  }
+  const at = new Date().toLocaleString('ja-JP');
+  await c.put(new Request(appURL + '__meta.json'), new Response(JSON.stringify({count:n, bytes, at}), {headers:{'Content-Type':'application/json'}}));
+  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist() } catch(e) {}
+  await check();
+}
+$('pick').onclick = () => $('file').click();
+$('again').onclick = () => $('file').click();
+$('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPack(f).catch(x => { err('取り込めませんでした：' + (x.message || x)); check() }) };
+$('play').onclick = () => location.href = appURL;
+if (!matchMedia('(display-mode: standalone)').matches && !navigator.standalone) $('hint').hidden = false;
+swReady().then(check).catch(x => { err(x.message || String(x)); show('need') });
+</script></body></html>

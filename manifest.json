@@ -1,0 +1,22 @@
+{
+  "name": "蟲神器 対戦",
+  "short_name": "蟲神器 対戦",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05040a",
+  "theme_color": "#05040a",
+  "icons": [
+    {
+      "src": "app/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "app/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
