@@ -15,11 +15,15 @@ img.icon{width:120px;height:120px;border-radius:28px;box-shadow:0 8px 30px rgba(
 h1{margin:0;font-size:24px;letter-spacing:.08em}
 p{margin:0;font-size:14px;line-height:1.7;color:#d8d2c8}
 small{color:var(--sub);font-size:12px;line-height:1.6}
+section{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
 .btn{display:block;width:100%;max-width:320px;min-height:54px;border-radius:27px;border:0;font-size:17px;font-weight:800;color:#3a2800;background:radial-gradient(#ffe48a,#c7952c);box-shadow:0 0 18px rgba(232,195,90,.5);font-family:inherit}
+.btn:disabled{opacity:.5}
 .btn.sub{background:none;color:#f3eee6;border:1px solid #5c5470;box-shadow:none;font-size:14px;min-height:44px}
+.key{width:100%;max-width:320px;min-height:48px;border-radius:12px;border:1px solid #5c5470;background:#120f18;color:#f3eee6;font-size:16px;padding:0 14px;font-family:inherit;text-align:center}
 .bar{width:100%;max-width:320px;height:10px;border-radius:5px;background:#221d2b;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#c7952c,#ffe48a);transition:width .2s}
 .steps{text-align:left;max-width:340px;font-size:13px;line-height:1.7;color:#d8d2c8;padding-left:20px;margin:0}
+.or{display:flex;align-items:center;gap:10px;width:100%;max-width:320px;color:var(--sub);font-size:12px;margin-top:8px}.or::before,.or::after{content:"";flex:1;height:1px;background:#3a3446}
 .err{color:#ff9aa6;font-size:13px}
 [hidden]{display:none!important}
 </style></head><body>
@@ -27,36 +31,98 @@ small{color:var(--sub);font-size:12px;line-height:1.6}
   <img class="icon" id="ico" src="icon-192.png" alt="">
   <h1>蟲神器 対戦</h1>
   <section id="need">
-    <p>はじめに、送ってもらった<br><b>「蟲神器データ.dat」</b>を取り込んでください。</p>
-    <ol class="steps"><li>LINE・AirDrop・LocalSend などで受け取ったファイルを「ファイル」アプリに保存</li><li id="stepHome">（iPhone）先にこの画面で 共有ボタン →「ホーム画面に追加」。<b>ホーム画面のアイコンから開き直してから</b>次へ<br><small>ホーム画面のアプリとSafariは保存場所が別なので、取り込みはアイコンから開いた側で行います</small></li><li>下のボタンを押して、そのファイルを選ぶ</li></ol>
-    <p style="margin-top:14px"><button class="btn" id="pick">データを取り込む</button></p>
+    <p id="stepHome" style="font-size:13px">（iPhone）先にこの画面で 共有ボタン →「ホーム画面に追加」。<b>ホーム画面のアイコンから開き直してから</b>入れてください<br><small>ホーム画面のアプリとSafariは保存場所が別なので、アイコンから開いた側で入れます</small></p>
+    <p>送ってもらった<b>「鍵」</b>を入れてください</p>
+    <input class="key" id="key" placeholder="鍵（英数字28文字）" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn" id="keyGo">鍵で入れる</button>
+    <small>はじめの1回だけ、ゲームの中身（約70MB）をダウンロードします。そのあとは開くたびに、変わった所だけ自動で更新します。</small>
+    <div class="or">または</div>
+    <button class="btn sub" id="pick">「蟲神器データ.dat」から取り込む</button>
     <input type="file" id="file" hidden>
-    <small>カードの絵・曲・声はこのスマホの中だけに保存されます（ネットには出ません）。取り込みは最初の1回だけです。</small>
   </section>
   <section id="busy" hidden><p id="msg">取り込み中…</p><div class="bar"><i id="pg"></i></div></section>
   <section id="ready" hidden>
     <button class="btn" id="play">対戦をはじめる</button>
-    <p style="margin-top:12px"><small id="info"></small></p>
-    <p style="margin-top:6px"><button class="btn sub" id="again">データを取り込み直す</button></p>
+    <small id="upd"></small>
+    <small id="info"></small>
+    <button class="btn sub" id="again">データを取り込み直す（.dat）</button>
+    <button class="btn sub" id="rekey">鍵を入れ直す</button>
   </section>
   <p class="err" id="err" hidden></p>
   <small id="hint" hidden>ホーム画面に追加すると、アプリのように全画面で遊べます（Safariの共有ボタン →「ホーム画面に追加」）。</small>
 </main>
 <script>
 const PACK = 'mj-pack', MAGIC = 'MJPK0001', $ = id => document.getElementById(id);
+// 配信先（さとうさんの Cloudflare：mj-pack）。鍵が合っている時だけ中身を返す。鍵はこのスマホの中だけに保存
+const REMOTE = 'https://mj-pack.mj-room.workers.dev/', KEYK = 'mj_pack_key';
 const show = s => ['need', 'busy', 'ready'].forEach(k => $(k).hidden = k !== s);
 const err = t => { $('err').textContent = t; $('err').hidden = !t };
 const appURL = new URL('app/', location.href).href;
+const getKey = () => { try { return localStorage.getItem(KEYK) || '' } catch(e) { return '' } };
+const setKey = k => { try { k ? localStorage.setItem(KEYK, k) : localStorage.removeItem(KEYK) } catch(e) {} };
 async function swReady(){
   if (!('serviceWorker' in navigator)) throw new Error('このブラウザでは使えません（Safari か Chrome で開いてください）');
   await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
   if (!navigator.serviceWorker.controller) await new Promise(r => { navigator.serviceWorker.addEventListener('controllerchange', r, {once:true}); setTimeout(r, 3000) });
 }
+async function metaOf(){ const c = await caches.open(PACK), m = await c.match(appURL + '__meta.json'); return m ? m.json() : null }
+function showInfo(m){ $('info').textContent = `入っている版：${m.ver || '（datから取り込み）'}・${m.count}ファイル・${(m.bytes / 1e6).toFixed(1)}MB（${m.at}）` }
 async function check(){
-  const c = await caches.open(PACK), meta = await c.match(appURL + '__meta.json');
-  if (!meta) return show('need');
-  const m = await meta.json(); $('info').textContent = `取り込み済み：${m.count}ファイル・${(m.bytes / 1e6).toFixed(1)}MB（${m.at}）`; show('ready');
+  const m = await metaOf(), key = getKey();
+  $('rekey').hidden = !key;
+  if (!m && !key) return show('need');
+  if (m) { showInfo(m); show('ready') }
+  if (key) { try { await sync(key) } catch(x) {
+    if (!m) { err('入れられませんでした：' + (x.message || x)); show('need') }
+    else { $('upd').textContent = '更新を確かめられませんでした（' + (x.message || x) + '）。前の版で遊べます'; $('play').disabled = false } } }
 }
+// ---- 鍵で入れる・更新する：配信先の一覧（各ファイルの中身の要約）と、このスマホの中を比べて、違う物だけ取ってくる ----
+async function sha1(blob){ const b = await crypto.subtle.digest('SHA-1', await blob.arrayBuffer()); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 16) }
+async function sync(key){
+  $('upd').textContent = '更新を確かめています…'; $('play').disabled = true;
+  const r = await fetch(REMOTE + 'manifest-pack.json?k=' + encodeURIComponent(key), {cache:'no-store'});
+  if (r.status === 403) throw new Error('鍵が違います');
+  if (!r.ok) throw new Error('配信先につながりませんでした（' + r.status + '）');
+  const man = await r.json(), c = await caches.open(PACK);
+  const known = await (async () => { const f = await c.match(appURL + '__files.json'); return f ? f.json() : {} })();
+  // 前に .dat から入れた物は要約の記録がないので、その場で中身から計算して比べる（同じなら取り直さない）
+  const need = [];
+  for (const [path, type, size, h] of man.files) {
+    let cur = known[path];
+    if (!cur) { const hit = await c.match(new Request(appURL + encodeURI(path))); if (hit) { const b = await hit.blob(); if (b.size === size) cur = await sha1(b) } }
+    if (cur === h) known[path] = h; else need.push([path, type, size, h]);
+  }
+  const keep = new Set(man.files.map(f => f[0]));
+  const gone = (await c.keys()).filter(q => { const p = decodeURIComponent(new URL(q.url).pathname.slice(new URL(appURL).pathname.length)); return !p.startsWith('__') && !keep.has(p) });
+  const old = await metaOf(), direct = !old;   // はじめての時は、取れた物から順に入れる（70MBを一度にメモリへ持たない）
+  if (need.length) {
+    show('busy'); const total = need.reduce((a, f) => a + f[2], 0); let got = 0, done = 0;
+    $('msg').textContent = `新しい版を取ってきています… 0 / ${need.length}`;
+    // 全部そろってから入れ替える（途中で切れても、前の版がそのまま残る）
+    const blobs = [];
+    const one = async ([path, type, size, h]) => {
+      const res = await fetch(REMOTE + encodeURI(path) + '?k=' + encodeURIComponent(key));
+      if (!res.ok) throw new Error(`${path} を取れませんでした（${res.status}）`);
+      const b = await res.blob(); if (b.size !== size) throw new Error(`${path} の大きさが違います`);
+      if (direct) { await c.put(new Request(appURL + encodeURI(path)), new Response(b, {headers:{'Content-Type':type, 'Content-Length':String(size)}})); known[path] = h } else blobs.push([path, type, size, h, b]);
+      got += size; done++;
+      $('pg').style.width = (got / total * 100).toFixed(1) + '%'; $('msg').textContent = `新しい版を取ってきています… ${done} / ${need.length}（${(got / 1e6).toFixed(1)} / ${(total / 1e6).toFixed(1)}MB）`;
+    };
+    const q = need.slice(); await Promise.all([...Array(6)].map(async () => { while (q.length) await one(q.shift()) }));
+    $('msg').textContent = '入れ替えています…';
+    for (const [path, type, size, h, b] of blobs) { await c.put(new Request(appURL + encodeURI(path)), new Response(b, {headers:{'Content-Type':type, 'Content-Length':String(size)}})); known[path] = h }
+  }
+  for (const q of gone) { await c.delete(q); delete known[decodeURIComponent(new URL(q.url).pathname.slice(new URL(appURL).pathname.length))] }
+  const m = {count:man.files.length, bytes:man.files.reduce((a, f) => a + f[2], 0), at:new Date().toLocaleString('ja-JP'), ver:man.ver};
+  if (need.length || gone.length || !old || old.ver !== man.ver) {
+    await c.put(new Request(appURL + '__files.json'), new Response(JSON.stringify(known), {headers:{'Content-Type':'application/json'}}));
+    await c.put(new Request(appURL + '__meta.json'), new Response(JSON.stringify(m), {headers:{'Content-Type':'application/json'}}));
+  }
+  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist() } catch(e) {}
+  showInfo((need.length || gone.length || !old) ? m : old); show('ready'); $('play').disabled = false;
+  $('upd').textContent = need.length || gone.length ? `更新しました（${need.length}ファイル）` : '最新の版です';
+}
+// ---- .dat から取り込む（予備）----
 async function importPack(file){
   err(''); show('busy'); $('msg').textContent = '読み込み中…';
   const buf = await file.arrayBuffer(), u8 = new Uint8Array(buf);
@@ -75,6 +141,11 @@ async function importPack(file){
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist() } catch(e) {}
   await check();
 }
+$('keyGo').onclick = async () => { const k = $('key').value.trim(); if (k.length < 16) return err('鍵を入れてください');
+  err(''); $('keyGo').disabled = true; show('busy'); $('msg').textContent = '鍵を確かめています…';
+  try { await sync(k); setKey(k); $('rekey').hidden = false } catch(x) { err('入れられませんでした：' + (x.message || x)); const m = await metaOf(); if (m) { showInfo(m); show('ready'); $('play').disabled = false } else show('need') }
+  $('keyGo').disabled = false };
+$('rekey').onclick = () => { $('key').value = ''; show('need') };
 $('pick').onclick = () => $('file').click();
 $('again').onclick = () => $('file').click();
 $('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPack(f).catch(x => { err('取り込めませんでした：' + (x.message || x)); check() }) };
