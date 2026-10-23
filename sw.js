@@ -2,8 +2,8 @@
 // ・入れ物（このフォルダの index.html など）は、ネットがあれば最新を取り、なければ保存した物を使う
 // ・中身（app/ の下：ゲーム本体・絵・曲・声）は、取り込んだ時に端末へ保存した物だけを返す（ネットには取りに行かない）
 // ・iPhoneのSafariは曲や声を「途中から（Range）」で読みに来るので、その形でも返す
-const SHELL = 'mj-shell-v1', PACK = 'mj-pack';
-const SHELL_FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
+const SHELL = 'mj-shell-v2', PACK = 'mj-pack';
+const SHELL_FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(SHELL).then(c => c.addAll(SHELL_FILES)).then(() => self.skipWaiting())) });
 self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()) });
 self.addEventListener('fetch', e => {

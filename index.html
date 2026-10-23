@@ -4,7 +4,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="蟲神器 対戦">
 <meta name="theme-color" content="#05040a">
-<link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="app/icon-180.png"><link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" href="icon-192.png">
 <title>蟲神器 対戦</title>
 <style>
 :root{--gold:#e8c35a;--sub:#a59fae}
@@ -53,7 +53,6 @@ async function swReady(){
   if (!navigator.serviceWorker.controller) await new Promise(r => { navigator.serviceWorker.addEventListener('controllerchange', r, {once:true}); setTimeout(r, 3000) });
 }
 async function check(){
-  if (navigator.serviceWorker.controller) $('ico').src = 'app/icon-180.png?' + Date.now();   // 取り込んだら公式のアイコン、前は自前のアイコン
   const c = await caches.open(PACK), meta = await c.match(appURL + '__meta.json');
   if (!meta) return show('need');
   const m = await meta.json(); $('info').textContent = `取り込み済み：${m.count}ファイル・${(m.bytes / 1e6).toFixed(1)}MB（${m.at}）`; show('ready');
