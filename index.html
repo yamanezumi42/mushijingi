@@ -3,6 +3,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="蟲神器 対戦">
+<meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#05040a">
 <link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" href="icon-192.png">
 <title>蟲神器 対戦</title>
@@ -54,7 +55,7 @@ section{display:flex;flex-direction:column;align-items:center;gap:10px;width:100
 </main>
 <script>
 const PACK = 'mj-pack', MAGIC = 'MJPK0001', $ = id => document.getElementById(id);
-// 配信先（さとうさんの Cloudflare：mj-pack）。鍵が合っている時だけ中身を返す。鍵はこのスマホの中だけに保存
+// 配信先（Cloudflare：mj-pack）。鍵が合っている時だけ中身を返す。鍵はこのスマホの中だけに保存
 const REMOTE = 'https://mj-pack.mj-room.workers.dev/', KEYK = 'mj_pack_key';
 const show = s => ['need', 'busy', 'ready'].forEach(k => $(k).hidden = k !== s);
 const err = t => { $('err').textContent = t; $('err').hidden = !t };
