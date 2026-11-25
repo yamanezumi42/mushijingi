@@ -28,10 +28,36 @@ async function fromPack(req, u, appBase){
   if (!hit) return new Response('データがありません：' + path, {status:404, headers:{'Content-Type':'text/plain; charset=utf-8'}});
   const range = req.headers.get('range');
   if (!range) return hit;
-  const blob = await hit.blob(), m = /bytes=(\d*)-(\d*)/.exec(range), size = blob.size;
+  // 2026-11-26 Range のたびにファイル全部を blob() で読んでいた（iPhone のメモリ切れの一因）→ 大きさは保存時の Content-Length から取り、
+  //   中身は流れ（stream）のまま要る所だけ切り出して返す。大きさが分からない時・流れが使えない時だけ前のやり方
+  const m = /bytes=(\d*)-(\d*)/.exec(range), type = hit.headers.get('Content-Type') || 'application/octet-stream';
+  let size = +hit.headers.get('Content-Length'), blob = null;
+  const streamOk = size > 0 && hit.body && typeof ReadableStream === 'function';
+  if (!streamOk) { blob = await hit.blob(); size = blob.size }
   let a = m && m[1] !== '' ? +m[1] : 0, b = m && m[2] !== '' ? +m[2] : size - 1;
-  if (m && m[1] === '' && m[2] !== '') { a = size - +m[2]; b = size - 1 }
+  if (m && m[1] === '' && m[2] !== '') { a = Math.max(0, size - +m[2]); b = size - 1 }
   b = Math.min(b, size - 1);
-  return new Response(blob.slice(a, b + 1), {status:206, headers:{'Content-Type':hit.headers.get('Content-Type') || 'application/octet-stream',
-    'Content-Range':`bytes ${a}-${b}/${size}`, 'Content-Length':String(b - a + 1), 'Accept-Ranges':'bytes'}});
+  if (a > b) return new Response(null, {status:416, headers:{'Content-Range':`bytes */${size}`}});
+  const headers = {'Content-Type':type, 'Content-Range':`bytes ${a}-${b}/${size}`, 'Content-Length':String(b - a + 1), 'Accept-Ranges':'bytes'};
+  if (blob) return new Response(blob.slice(a, b + 1), {status:206, headers});
+  return new Response(cut(hit.body, a, b + 1), {status:206, headers});
+}
+// 流れから [a, e) だけを通す（読んだ所は手放す。e まで来たら残りは読まずにやめる）
+function cut(body, a, e){
+  const rd = body.getReader(); let pos = 0;
+  return new ReadableStream({
+    async pull(ctl){
+      for (;;) {
+        const {done, value} = await rd.read();
+        if (done) { ctl.close(); return }
+        const s = pos, n = value.byteLength; pos += n;
+        if (pos <= a) continue;
+        const from = Math.max(0, a - s), to = Math.min(n, e - s);
+        if (to > from) ctl.enqueue(from === 0 && to === n ? value : value.subarray(from, to));
+        if (pos >= e) { ctl.close(); try { rd.cancel() } catch (x) {} return }
+        return;
+      }
+    },
+    cancel(){ try { rd.cancel() } catch (x) {} }
+  });
 }
