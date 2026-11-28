@@ -179,7 +179,7 @@ $('retry').onclick = () => { err(''); check() };
 $('pick').onclick = () => $('file').click();
 $('again').onclick = () => $('file').click();
 $('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPack(f).catch(x => { err('取り込めませんでした：' + (x.message || x)); check() }) };
-$('play').onclick = () => location.href = appURL;
+$('play').onclick = () => location.replace(appURL);   // 2026-11-28 履歴に入れ物を残さない（迷宮で端から引くと、この画面へ戻っていた）
 const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 if (standalone) $('stepHome').hidden = true; else $('hint').hidden = false;
 swReady().then(check).catch(x => { err(x.message || String(x)); show('need') });
