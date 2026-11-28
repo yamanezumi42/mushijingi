@@ -41,6 +41,7 @@ section{display:flex;flex-direction:column;align-items:center;gap:10px;width:100
     <div class="or">または</div>
     <button class="btn sub" id="pick">「蟲神器データ.dat」から取り込む</button>
     <input type="file" id="file" hidden>
+    <button class="btn sub" id="back" hidden>戻る</button>
   </section>
   <section id="busy" hidden><p id="msg" style="white-space:pre-line">取り込み中…</p><div class="bar"><i id="pg"></i></div></section>
   <section id="ready" hidden>
@@ -49,7 +50,7 @@ section{display:flex;flex-direction:column;align-items:center;gap:10px;width:100
     <button class="btn sub" id="retry" hidden>もう一度 更新を確かめる</button>
     <small id="info"></small>
     <button class="btn sub" id="again">データを取り込み直す（.dat）</button>
-    <button class="btn sub" id="rekey">鍵を入れ直す</button>
+    <button class="btn sub" id="rekey">鍵を入れる</button>
   </section>
   <p class="err" id="err" hidden></p>
   <small id="hint" hidden>ホーム画面に追加すると、アプリのように全画面で遊べます（Safariの共有ボタン →「ホーム画面に追加」）。</small>
@@ -70,11 +71,20 @@ async function swReady(){
 }
 async function metaOf(){ const c = await caches.open(PACK), m = await c.match(appURL + '__meta.json'); return m ? m.json() : null }
 function showInfo(m){ $('info').textContent = `入っている版：${m.ver || '（datから取り込み）'}・${m.count}ファイル・${(m.bytes / 1e6).toFixed(1)}MB（${m.at}）` }
+// 2026-11-29 鍵が無い端末（.dat から取り込んだ）にも「鍵を入れる」を出す。鍵がある時は「鍵を入れ直す」
+function keyBtn(){ const k = !!getKey(); $('rekey').textContent = k ? '鍵を入れ直す' : '鍵を入れる'; $('rekey').classList.toggle('sub', k || !$('rekey').dataset.newer) }
+// 2026-11-29 鍵が無くても、新しい版が出ているかだけを配信先の /ver（版の名前だけ・鍵なし）で見る
+async function verNoKey(m){
+  try { const r = await fetch(REMOTE + 'ver?t=' + Date.now(), {cache:'no-store'}); if (!r.ok) return; const v = String((await r.json()).ver || ''); if (!v || getKey()) return;
+    const newer = v !== m.ver; $('rekey').dataset.newer = newer ? '1' : ''; keyBtn();
+    $('upd').textContent = newer ? '新しい版 ' + v : '最新の版です' } catch(e) {}
+}
 async function check(){
-  const m = await metaOf(), key = getKey();
-  $('rekey').hidden = !key;
+  const m = await metaOf(), key = getKey(), wantKey = location.hash === '#key';
+  if (wantKey) try { history.replaceState(null, '', location.pathname + location.search) } catch(e) {}
+  keyBtn(); $('back').hidden = !m;
   if (!m && !key) return show('need');
-  if (m) { showInfo(m); show('ready') }
+  if (m) { showInfo(m); show('ready'); if (!key) { $('upd').textContent = ''; if (wantKey) { show('need'); $('key').focus() } verNoKey(m) } }
   if (key) { try { await sync(key) } catch(x) {
     if (!m) { err('入れられませんでした：' + (x.message || x)); show('need') }
     else { showInfo(m); show('ready'); $('upd').textContent = '更新できませんでした（' + (x.message || x) + '）。前の版で遊べます'; $('play').disabled = false; $('retry').hidden = false } } }
@@ -86,7 +96,7 @@ async function sync(key){
   const r = await fetch(REMOTE + 'manifest-pack.json?k=' + encodeURIComponent(key) + '&t=' + Date.now(), {cache:'no-store'}).catch(() => { throw new Error('配信先につながりませんでした（ネットにつながっているか確かめてください）') });
   if (r.status === 403) throw new Error('鍵が違います');
   if (!r.ok) throw new Error('配信先につながりませんでした（' + r.status + '）');
-  setKey(key); $('rekey').hidden = false;   // 鍵が合っていると分かった時点で覚える（取り込みの途中で閉じても、次に開いた時に続きから）
+  setKey(key); keyBtn();   // 鍵が合っていると分かった時点で覚える（取り込みの途中で閉じても、次に開いた時に続きから）
   const man = await r.json(), c = await caches.open(PACK);
   const known = await (async () => { const f = await c.match(appURL + '__files.json'); return f ? f.json() : {} })();
   // 前に .dat から入れた物は要約の記録がないので、その場で中身から計算して比べる（同じなら取り直さない）
@@ -158,23 +168,28 @@ async function importPack(file){
   if (new TextDecoder().decode(u8.slice(0, 8)) !== MAGIC) throw new Error('「蟲神器データ.dat」ではないようです');
   const hl = new DataView(buf).getUint32(8, true), list = JSON.parse(new TextDecoder().decode(u8.slice(12, 12 + hl)));
   await caches.delete(PACK); const c = await caches.open(PACK);
-  let off = 12 + hl, n = 0, bytes = 0;
+  let off = 12 + hl, n = 0, bytes = 0, all = '';
+  const known = {}, te = new TextEncoder();
   for (const [path, type, size] of list) {
     const blob = new Blob([u8.subarray(off, off + size)], {type});
     await c.put(new Request(appURL + encodeURI(path)), new Response(blob, {headers:{'Content-Type':type, 'Content-Length':String(size)}}));
+    const h = await sha1(blob); known[path] = h; all += path + h;   // 2026-11-29 .dat から入れた時も版の名前と要約を残す（make_pack_site.py の版と同じ計算）
     off += size; n++; bytes += size;
     if (n % 20 === 0 || n === list.length) { $('pg').style.width = (n / list.length * 100).toFixed(1) + '%'; $('msg').textContent = `取り込み中… ${n} / ${list.length}` }
   }
   const at = new Date().toLocaleString('ja-JP');
-  await c.put(new Request(appURL + '__meta.json'), new Response(JSON.stringify({count:n, bytes, at}), {headers:{'Content-Type':'application/json'}}));
+  const vb = await crypto.subtle.digest('SHA-1', te.encode(all)), ver = [...new Uint8Array(vb)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 10);
+  await c.put(new Request(appURL + '__files.json'), new Response(JSON.stringify(known), {headers:{'Content-Type':'application/json'}}));
+  await c.put(new Request(appURL + '__meta.json'), new Response(JSON.stringify({count:n, bytes, at, ver}), {headers:{'Content-Type':'application/json'}}));
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist() } catch(e) {}
   await check();
 }
 $('keyGo').onclick = async () => { const k = $('key').value.trim(); if (k.length < 16) return err('鍵を入れてください');
   err(''); $('keyGo').disabled = true; show('busy'); $('msg').textContent = '鍵を確かめています…';
-  try { await sync(k); setKey(k); $('rekey').hidden = false } catch(x) { err('入れられませんでした：' + (x.message || x) + (/鍵が違います/.test(x.message) ? '' : '（もう一度押すと、取れた所の続きから入れます）')); const m = await metaOf(); if (m) { showInfo(m); show('ready'); $('play').disabled = false } else show('need') }
+  try { await sync(k); setKey(k); keyBtn() } catch(x) { err('入れられませんでした：' + (x.message || x) + (/鍵が違います/.test(x.message) ? '' : '（もう一度押すと、取れた所の続きから入れます）')); const m = await metaOf(); if (m) { showInfo(m); show('ready'); $('play').disabled = false } else show('need') }
   $('keyGo').disabled = false };
-$('rekey').onclick = () => { $('key').value = ''; show('need') };
+$('rekey').onclick = () => { $('key').value = ''; err(''); show('need') };
+$('back').onclick = async () => { err(''); const m = await metaOf(); if (m) { showInfo(m); show('ready') } };
 $('retry').onclick = () => { err(''); check() };
 $('pick').onclick = () => $('file').click();
 $('again').onclick = () => $('file').click();
